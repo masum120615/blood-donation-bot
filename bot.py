@@ -6,7 +6,6 @@ Requires: python-telegram-bot v20+, flask
 
 import os
 import sqlite3
-import threading
 from datetime import datetime, timedelta
 from flask import Flask
 from telegram import (
@@ -31,7 +30,7 @@ ADMIN_ID = int(os.environ.get("ADMIN_ID", "8377692677"))
 ADMIN_IDS = [ADMIN_ID]
 OWNER_NAME = "MD MASUM"
 OWNER_PHONE = "+8801345452458"
-PORT = int(os.environ.get("PORT", 10000))
+
 
 
 def is_admin(user_id: int) -> bool:
@@ -42,18 +41,6 @@ def is_admin(user_id: int) -> bool:
 NAME, PHONE, ADDRESS, BLOOD_GROUP, LAST_DONATION = range(5)
 UPDATE_DATE = 5
 
-# ============== FLASK APP (Render keep-alive) ==============
-flask_app = Flask(__name__)
-
-
-@flask_app.route("/")
-def home():
-    return "🩸 Blood Donation Bot is running!", 200
-
-
-@flask_app.route("/health")
-def health():
-    return "OK", 200
 
 
 # ============== DATABASE SETUP ==============
@@ -885,20 +872,11 @@ async def callback_button_handler(update: Update, context):
             parse_mode=ParseMode.MARKDOWN,
         )
 
-
-# ============== FLASK THREAD ==============
-def run_flask():
-    flask_app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
-
-
 # ============== MAIN ==============
 def main():
     init_db()
 
     # Start Flask in a daemon thread so Render sees an open port
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    print(f"✅ Flask server started on port {PORT}")
 
     application = (
         Application.builder()
