@@ -670,7 +670,7 @@ async def register_cancel(update: Update, context):
     return ConversationHandler.END
 
 
-# ============== MENU BUTTON HANDLER ==============
+# ==============  BUTTON HANDLER ==============
 async def menu_button_handler(update: Update, context):
     text = update.message.text
     user_id = update.effective_user.id
