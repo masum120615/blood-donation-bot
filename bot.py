@@ -25,7 +25,7 @@ from telegram.ext import (
 from telegram.constants import ParseMode
 
 # ============== CONFIGURATION ==============
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8776916298:AAHZ90E6d1wjmKWRi2jpxMJBqV_5pBKuLbY")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8776916298:AAHZ90E6d1wjmKWRi2jpxMJBqV_5pBKuLbY")
 ADMIN_ID = int(os.environ.get("ADMIN_ID", "8377692677"))
 ADMIN_IDS = [ADMIN_ID]
 OWNER_NAME = "MD MASUM"
@@ -874,6 +874,8 @@ async def callback_button_handler(update: Update, context):
 
 # ============== MAIN ==============
 def main():
+    print("BOT IS STARTING...")
+     print("INITIALIZING DB...")
     init_db()
 
     # Start Flask in a daemon thread so Render sees an open port
