@@ -840,19 +840,13 @@ def main():
     application.add_handler(CallbackQueryHandler(callback_button_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-  def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-
-    # handlers add করো
-    # app.add_handler(...)
-
     print("=" * 50)
     print("🩸 Blood Donation Bot is running...")
+    print(f"Bot Token: {BOT_TOKEN[:15]}...")
     print(f"Admin ID: {ADMIN_ID}")
     print("=" * 50)
 
-    app.run_polling()
-
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()
