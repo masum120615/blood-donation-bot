@@ -3,14 +3,16 @@ Telegram Blood Donation Bot - Complete Single File
 Author: Blood Donation System
 Requires: python-telegram-bot v20+
 """
-
 import sqlite3
 import asyncio
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ConversationHandler, filters
 from telegram.constants import ParseMode
-
+import os
+import psycopg2 
+def get_db_connection():
+    return psycopg2.connect(os.getenv("DATABASE_URL"))
 # ============== CONFIGURATION ==============
 BOT_TOKEN = "8776916298:AAHZ90E6d1wjmKWRi2jpxMJBqV_5pBKuLbY"
 ADMIN_ID = 8377692677
@@ -27,7 +29,7 @@ UPDATE_DATE = 5
 
 # ============== DATABASE SETUP ==============
 def init_db():
-    conn = sqlite3.connect('blood_donation.db')
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS donors (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -440,7 +442,7 @@ async def update_donation_receive(update: Update, context):
     user_id = update.effective_user.id
     conn = sqlite3.connect('blood_donation.db')
     c = conn.cursor()
-    c.execute('UPDATE donors SET last_donation_date = ? WHERE user_id = ?', (date_text, user_id))
+    c.execute('UPDATE donors SET last_donation_date = ? WHERE user_id = %s', (date_text, user_id))
     conn.commit()
     conn.close()
 
