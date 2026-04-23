@@ -1,35 +1,67 @@
 """
-Telegram Blood Donation Bot - Complete Single File
+Telegram Blood Donation Bot - Production Ready (Render FREE Web Service)
 Author: Blood Donation System
-Requires: python-telegram-bot v20+
+Requires: python-telegram-bot v20+, flask
 """
 
+import os
 import sqlite3
-import asyncio
+import threading
 from datetime import datetime, timedelta
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ConversationHandler, filters
+from flask import Flask
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+)
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ConversationHandler,
+    filters,
+)
 from telegram.constants import ParseMode
 
 # ============== CONFIGURATION ==============
-BOT_TOKEN = "8776916298:AAHZ90E6d1wjmKWRi2jpxMJBqV_5pBKuLbY"
-ADMIN_ID = 8377692677
-ADMIN_IDS = [8377692677]
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8776916298:AAHZ90E6d1wjmKWRi2jpxMJBqV_5pBKuLbY")
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "8377692677"))
+ADMIN_IDS = [ADMIN_ID]
 OWNER_NAME = "MD MASUM"
 OWNER_PHONE = "+8801345452458"
+PORT = int(os.environ.get("PORT", 10000))
+
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
+
 
 # Conversation states
 NAME, PHONE, ADDRESS, BLOOD_GROUP, LAST_DONATION = range(5)
 UPDATE_DATE = 5
 
+# ============== FLASK APP (Render keep-alive) ==============
+flask_app = Flask(__name__)
+
+
+@flask_app.route("/")
+def home():
+    return "🩸 Blood Donation Bot is running!", 200
+
+
+@flask_app.route("/health")
+def health():
+    return "OK", 200
+
+
 # ============== DATABASE SETUP ==============
 def init_db():
-    conn = sqlite3.connect('blood_donation.db')
+    conn = sqlite3.connect("blood_donation.db")
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS donors (
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS donors (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER UNIQUE,
         name TEXT,
@@ -38,27 +70,46 @@ def init_db():
         address TEXT,
         status TEXT DEFAULT 'pending',
         registered_at TEXT
-    )''')
+    )"""
+    )
     c.execute("PRAGMA table_info(donors)")
-    columns = [column[1] for column in c.fetchall()]
-    if 'last_donation_date' not in columns:
-        c.execute('ALTER TABLE donors ADD COLUMN last_donation_date TEXT')
+    columns = [col[1] for col in c.fetchall()]
+    if "last_donation_date" not in columns:
+        c.execute("ALTER TABLE donors ADD COLUMN last_donation_date TEXT")
     conn.commit()
     conn.close()
 
+
 def add_donor(user_id, name, blood_group, phone, address, last_donation_date):
-    conn = sqlite3.connect('blood_donation.db')
+    conn = sqlite3.connect("blood_donation.db")
     c = conn.cursor()
-    c.execute('INSERT INTO donors (user_id, name, blood_group, phone, address, last_donation_date, status, registered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-              (user_id, name, blood_group, phone, address, last_donation_date, 'pending', datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+    c.execute(
+        "INSERT INTO donors (user_id, name, blood_group, phone, address, last_donation_date, status, registered_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            user_id,
+            name,
+            blood_group,
+            phone,
+            address,
+            last_donation_date,
+            "pending",
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        ),
+    )
     conn.commit()
     conn.close()
+
 
 def get_donor(user_id):
     try:
-        conn = sqlite3.connect('blood_donation.db')
+        conn = sqlite3.connect("blood_donation.db")
         c = conn.cursor()
-        c.execute('SELECT name, blood_group, phone, address, last_donation_date, status FROM donors WHERE user_id = ?', (user_id,))
+        c.execute(
+            "SELECT name, blood_group, phone, address, last_donation_date, status "
+            "FROM donors WHERE user_id = ?",
+            (user_id,),
+        )
         result = c.fetchone()
         conn.close()
         return result
@@ -66,11 +117,14 @@ def get_donor(user_id):
         print(f"Database error in get_donor: {e}")
         return None
 
+
 def get_all_donors():
     try:
-        conn = sqlite3.connect('blood_donation.db')
+        conn = sqlite3.connect("blood_donation.db")
         c = conn.cursor()
-        c.execute('SELECT id, user_id, name, blood_group, phone, address, last_donation_date, status FROM donors')
+        c.execute(
+            "SELECT id, user_id, name, blood_group, phone, address, last_donation_date, status FROM donors"
+        )
         result = c.fetchall()
         conn.close()
         return result
@@ -78,11 +132,15 @@ def get_all_donors():
         print(f"Database error in get_all_donors: {e}")
         return []
 
+
 def get_pending_donors():
     try:
-        conn = sqlite3.connect('blood_donation.db')
+        conn = sqlite3.connect("blood_donation.db")
         c = conn.cursor()
-        c.execute('SELECT id, user_id, name, blood_group, phone, address, last_donation_date FROM donors WHERE status = "pending"')
+        c.execute(
+            "SELECT id, user_id, name, blood_group, phone, address, last_donation_date "
+            'FROM donors WHERE status = "pending"'
+        )
         result = c.fetchall()
         conn.close()
         return result
@@ -90,9 +148,10 @@ def get_pending_donors():
         print(f"Database error in get_pending_donors: {e}")
         return []
 
+
 def approve_donor(donor_id):
     try:
-        conn = sqlite3.connect('blood_donation.db')
+        conn = sqlite3.connect("blood_donation.db")
         c = conn.cursor()
         c.execute('UPDATE donors SET status = "approved" WHERE id = ?', (donor_id,))
         conn.commit()
@@ -102,11 +161,16 @@ def approve_donor(donor_id):
         print(f"Database error in approve_donor: {e}")
         return False
 
+
 def search_donors(blood_group):
     try:
-        conn = sqlite3.connect('blood_donation.db')
+        conn = sqlite3.connect("blood_donation.db")
         c = conn.cursor()
-        c.execute('SELECT name, phone, address, last_donation_date FROM donors WHERE blood_group = ? AND status = "approved"', (blood_group.upper(),))
+        c.execute(
+            "SELECT name, phone, address, last_donation_date FROM donors "
+            'WHERE blood_group = ? AND status = "approved"',
+            (blood_group.upper(),),
+        )
         result = c.fetchall()
         conn.close()
         return result
@@ -114,74 +178,81 @@ def search_donors(blood_group):
         print(f"Database error in search_donors: {e}")
         return []
 
+
 def is_eligible_to_donate(last_donation_date):
     if not last_donation_date:
         return True
     try:
-        last_date = datetime.strptime(last_donation_date, '%Y-%m-%d')
-        days_diff = (datetime.now() - last_date).days
-        return days_diff >= 90
-    except:
+        last_date = datetime.strptime(last_donation_date, "%Y-%m-%d")
+        return (datetime.now() - last_date).days >= 90
+    except Exception:
         return True
+
 
 # ============== KEYBOARDS ==============
 def main_keyboard():
     keyboard = [
         ["🩸 ডোনার খুঁজুন", "🚨 জরুরি রিকোয়েস্ট"],
         ["📝 রেজিস্ট্রেশন", "ℹ️ আমার তথ্য"],
-        ["📅 তারিখ আপডেট", "❓ সাহায্য"]
+        ["📅 তারিখ আপডেট", "❓ সাহায্য"],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
+
 
 def admin_keyboard():
     keyboard = [
         ["📢 ব্রডকাস্ট", "👥 ইউজার লিস্ট"],
         ["🩸 ইমার্জেন্সি লিস্ট", "✅ ডোনার ভেরিফাই"],
-        ["❌ ডোনার ডিলিট", "🔙 মেনুতে ফিরুন"]
+        ["❌ ডোনার ডিলিট", "🔙 মেনুতে ফিরুন"],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
+
 
 # ============== START ==============
 async def start(update: Update, context):
     user_id = update.effective_user.id
     reply_markup = admin_keyboard() if is_admin(user_id) else main_keyboard()
     await update.message.reply_text(
-    "🩸 *রক্তদান বটে স্বাগতম!*\n\n"
-    "যে ব্যক্তি একটি প্রাণকে বাঁচায়, সে যেন সমগ্র মানবজাতিকে বাঁচাল।\n\n"
-    "হযরত মুহাম্মদ (সা.) বলেছেন,\n"
-    "\"মানুষের মধ্যে সেই ব্যক্তি উত্তম, যে মানুষের জন্য সবচেয়ে বেশি উপকারী।\"\n\n"
-    "আমাদের বটটি জরুরি মুহূর্তে রক্তদাতা এবং রক্তগ্রহীতার মধ্যে সংযোগ স্থাপন করে।\n\n"
-    "নিচের বাটন বা কমান্ড ব্যবহার করুন:\n"
-    "/search - রক্তদাতা খুঁজুন\n"
-    "/emergency - জরুরি রিকোয়েস্ট\n"
-    "/myinfo - আপনার তথ্য দেখুন\n"
-    "/update_donation_date - শেষ রক্তদানের তারিখ আপডেট করুন\n"
-    "/help - সাহায্য",
-    reply_markup=reply_markup,
-    parse_mode=ParseMode.MARKDOWN
-)
+        "🩸 *রক্তদান বটে স্বাগতম!*\n\n"
+        "যে ব্যক্তি একটি প্রাণকে বাঁচায়, সে যেন সমগ্র মানবজাতিকে বাঁচাল।\n\n"
+        "হযরত মুহাম্মদ (সা.) বলেছেন,\n"
+        '\"মানুষের মধ্যে সেই ব্যক্তি উত্তম, যে মানুষের জন্য সবচেয়ে বেশি উপকারী।\"\n\n'
+        "আমাদের বটটি জরুরি মুহূর্তে রক্তদাতা এবং রক্তগ্রহীতার মধ্যে সংযোগ স্থাপন করে।\n\n"
+        "নিচের বাটন বা কমান্ড ব্যবহার করুন:\n"
+        "/search - রক্তদাতা খুঁজুন\n"
+        "/emergency - জরুরি রিকোয়েস্ট\n"
+        "/myinfo - আপনার তথ্য দেখুন\n"
+        "/update_donation_date - শেষ রক্তদানের তারিখ আপডেট করুন\n"
+        "/help - সাহায্য",
+        reply_markup=reply_markup,
+        parse_mode=ParseMode.MARKDOWN,
+    )
 
-# ============== SEARCH COMMAND ==============
+
+# ============== SEARCH ==============
 async def search_command(update: Update, context):
     await update.message.reply_text(
         "🔍 *রক্তদাতা খুঁজুন*\n\n"
         "আপনার প্রয়োজনীয় ব্লাড গ্রুপ লিখুন (A+, A-, B+, B-, AB+, AB-, O+, O-):",
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.MARKDOWN,
     )
-    context.user_data['action'] = 'search'
+    context.user_data["action"] = "search"
 
-# ============== EMERGENCY COMMAND ==============
+
+# ============== EMERGENCY ==============
 async def emergency_command(update: Update, context):
     await update.message.reply_text(
         "🚨 *জরুরি রক্তের আবেদন*\n\n"
         "আপনার প্রয়োজনীয় ব্লাড গ্রুপ লিখুন (A+, A-, B+, B-, AB+, AB-, O+, O-):",
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.MARKDOWN,
     )
-    context.user_data['action'] = 'emergency'
+    context.user_data["action"] = "emergency"
 
-# ============== MYINFO COMMAND ==============
+
+# ============== MYINFO ==============
 async def myinfo_command(update: Update, context):
     donor = get_donor(update.effective_user.id)
+    reply_markup = admin_keyboard() if is_admin(update.effective_user.id) else main_keyboard()
     if donor:
         name, blood, phone, address, last_donation, status = donor
         status_emoji = "✅ অনুমোদিত" if status == "approved" else "⏳ পেন্ডিং"
@@ -194,18 +265,20 @@ async def myinfo_command(update: Update, context):
             f"📍 ঠিকানা: {address}\n"
             f"📅 শেষ রক্তদানের তারিখ: {last_donation_text}\n"
             f"⭐ স্ট্যাটাস: {status_emoji}",
-            reply_markup=admin_keyboard() if is_admin(update.effective_user.id) else main_keyboard(),
-            parse_mode=ParseMode.MARKDOWN
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.MARKDOWN,
         )
     else:
         await update.message.reply_text(
             "❌ আপনি এখনও রক্তদাতা হিসেবে নিবন্ধিত নন।\n\n"
             "'রেজিস্ট্রেশন' বাটনে ক্লিক করুন অথবা /register লিখুন।",
-            reply_markup=admin_keyboard() if is_admin(update.effective_user.id) else main_keyboard()
+            reply_markup=reply_markup,
         )
 
-# ============== HELP COMMAND ==============
+
+# ============== HELP ==============
 async def help_command(update: Update, context):
+    reply_markup = admin_keyboard() if is_admin(update.effective_user.id) else main_keyboard()
     await update.message.reply_text(
         f"*সাহায্য ও সহায়তা*\n\n"
         f"👨 মালিক: {OWNER_NAME}\n"
@@ -225,22 +298,26 @@ async def help_command(update: Update, context):
         f"• জরুরি রক্তের আবেদন করুন\n"
         f"• অ্যাডমিন অনুমোদন ব্যবস্থা\n\n"
         f"রক্তদান করুন, জীবন বাঁচান! 🩸",
-        reply_markup=admin_keyboard() if is_admin(update.effective_user.id) else main_keyboard(),
-        parse_mode=ParseMode.MARKDOWN
+        reply_markup=reply_markup,
+        parse_mode=ParseMode.MARKDOWN,
     )
+
 
 # ============== ADMIN COMMANDS ==============
 async def admin_command(update: Update, context):
     if update.effective_user.id == ADMIN_ID:
-        keyboard = [[InlineKeyboardButton("📋 পেন্ডিং ডোনার", callback_data='pending')],
-                   [InlineKeyboardButton("📊 পরিসংখ্যান", callback_data='stats')]]
+        keyboard = [
+            [InlineKeyboardButton("📋 পেন্ডিং ডোনার", callback_data="pending")],
+            [InlineKeyboardButton("📊 পরিসংখ্যান", callback_data="stats")],
+        ]
         await update.message.reply_text(
             "*অ্যাডমিন কমান্ড*\n\nএকটি অপশন নির্বাচন করুন:",
             reply_markup=InlineKeyboardMarkup(keyboard),
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.MARKDOWN,
         )
     else:
         await update.message.reply_text("⛔ অ্যাক্সেস অস্বীকৃত। আপনি অ্যাডমিন নন।")
+
 
 async def broadcast_command(update: Update, context):
     if not is_admin(update.effective_user.id):
@@ -248,14 +325,15 @@ async def broadcast_command(update: Update, context):
         return
     if not context.args:
         await update.message.reply_text(
-            "📢 *ব্রডকাস্ট ব্যবহার:*\n/broadcast আপনার বার্তা\n\nউদাহরণ:\n/broadcast আগামীকাল রক্তদান ক্যাম্প অনুষ্ঠিত হবে!",
-            parse_mode=ParseMode.MARKDOWN
+            "📢 *ব্রডকাস্ট ব্যবহার:*\n/broadcast আপনার বার্তা\n\n"
+            "উদাহরণ:\n/broadcast আগামীকাল রক্তদান ক্যাম্প অনুষ্ঠিত হবে!",
+            parse_mode=ParseMode.MARKDOWN,
         )
         return
-    message_text = ' '.join(context.args)
-    conn = sqlite3.connect('blood_donation.db')
+    message_text = " ".join(context.args)
+    conn = sqlite3.connect("blood_donation.db")
     c = conn.cursor()
-    c.execute('SELECT DISTINCT user_id FROM donors')
+    c.execute("SELECT DISTINCT user_id FROM donors")
     users = c.fetchall()
     conn.close()
     if not users:
@@ -268,14 +346,15 @@ async def broadcast_command(update: Update, context):
             await context.bot.send_message(
                 user[0],
                 f"📢 *ব্রডকাস্ট বার্তা*\n\n{message_text}",
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=ParseMode.MARKDOWN,
             )
             sent_count += 1
-        except:
+        except Exception:
             fail_count += 1
     await update.message.reply_text(
         f"✅ ব্রডকাস্ট সম্পন্ন!\n\n📨 পাঠানো হয়েছে: {sent_count}\n❌ ব্যর্থ: {fail_count}"
     )
+
 
 async def users_command(update: Update, context):
     if not is_admin(update.effective_user.id):
@@ -286,12 +365,11 @@ async def users_command(update: Update, context):
         await update.message.reply_text("কোনো নিবন্ধিত ইউজার নেই।")
         return
     total = len(donors)
-    approved = len([d for d in donors if d[7] == 'approved'])
+    approved = len([d for d in donors if d[7] == "approved"])
     pending = total - approved
-    result = f"👥 *ইউজার লিস্ট*\n\n"
-    result += f"মোট: {total} | ✅ অনুমোদিত: {approved} | ⏳ পেন্ডিং: {pending}\n\n"
+    result = f"👥 *ইউজার লিস্ট*\n\nমোট: {total} | ✅ অনুমোদিত: {approved} | ⏳ পেন্ডিং: {pending}\n\n"
     for d in donors[:10]:
-        status_icon = "✅" if d[7] == 'approved' else "⏳"
+        status_icon = "✅" if d[7] == "approved" else "⏳"
         last_donation_text = d[6] if d[6] else "কখনো না"
         result += f"{status_icon} *আইডি:{d[0]}* | {d[2]} - {d[3]}\n"
         result += f"   📞 {d[4]} | 📍 {d[5]}\n"
@@ -300,27 +378,34 @@ async def users_command(update: Update, context):
         result += f"\n_মোট {total} জনের মধ্যে ১০ জন দেখানো হচ্ছে।_"
     await update.message.reply_text(result, parse_mode=ParseMode.MARKDOWN)
 
+
 async def emergency_list_command(update: Update, context):
     if not is_admin(update.effective_user.id):
         await update.message.reply_text("⛔ অ্যাক্সেস অস্বীকৃত। শুধু অ্যাডমিন।")
         return
-    conn = sqlite3.connect('blood_donation.db')
+    conn = sqlite3.connect("blood_donation.db")
     c = conn.cursor()
-    c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='emergency_requests'")
+    c.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='emergency_requests'"
+    )
     if not c.fetchone():
         await update.message.reply_text("কোনো জরুরি রিকোয়েস্ট পাওয়া যায়নি।")
         conn.close()
         return
-    c.execute('SELECT id, requester_name, blood_group, location, created_at FROM emergency_requests ORDER BY id DESC LIMIT 20')
+    c.execute(
+        "SELECT id, requester_name, blood_group, location, created_at "
+        "FROM emergency_requests ORDER BY id DESC LIMIT 20"
+    )
     requests = c.fetchall()
     conn.close()
     if not requests:
         await update.message.reply_text("কোনো জরুরি রিকোয়েস্ট পাওয়া যায়নি।")
         return
-    result = f"🩸 *জরুরি রিকোয়েস্টের ইতিহাস*\n\n"
+    result = "🩸 *জরুরি রিকোয়েস্টের ইতিহাস*\n\n"
     for r in requests:
         result += f"🆔 #{r[0]}\n👤 {r[1]}\n🩸 {r[2]} | 📍 {r[3]}\n⏰ {r[4]}\n\n"
     await update.message.reply_text(result, parse_mode=ParseMode.MARKDOWN)
+
 
 async def verify_donor_command(update: Update, context):
     if not is_admin(update.effective_user.id):
@@ -329,7 +414,7 @@ async def verify_donor_command(update: Update, context):
     if not context.args:
         await update.message.reply_text(
             "✅ *ডোনার ভেরিফাই ব্যবহার:*\n/verify_donor <ডোনার আইডি>\n\nউদাহরণ: /verify_donor 1",
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.MARKDOWN,
         )
         return
     try:
@@ -337,31 +422,39 @@ async def verify_donor_command(update: Update, context):
     except (ValueError, IndexError):
         await update.message.reply_text("❌ ভুল ডোনার আইডি। সঠিক নম্বর দিন।")
         return
-    conn = sqlite3.connect('blood_donation.db')
+    conn = sqlite3.connect("blood_donation.db")
     c = conn.cursor()
-    c.execute('SELECT id, user_id, name, status FROM donors WHERE id = ?', (donor_id,))
+    c.execute("SELECT id, user_id, name, status FROM donors WHERE id = ?", (donor_id,))
     donor = c.fetchone()
     if not donor:
         await update.message.reply_text(f"❌ আইডি {donor_id} সম্পন্ন কোনো ডোনার পাওয়া যায়নি।")
         conn.close()
         return
     donor_id_db, donor_user_id, donor_name, current_status = donor
-    if current_status == 'approved':
-        await update.message.reply_text(f"ℹ️ ডোনার *{donor_name}* ইতিমধ্যে ভেরিফাইড।", parse_mode=ParseMode.MARKDOWN)
+    if current_status == "approved":
+        await update.message.reply_text(
+            f"ℹ️ ডোনার *{donor_name}* ইতিমধ্যে ভেরিফাইড।",
+            parse_mode=ParseMode.MARKDOWN,
+        )
         conn.close()
         return
     c.execute('UPDATE donors SET status = "approved" WHERE id = ?', (donor_id_db,))
     conn.commit()
     conn.close()
-    await update.message.reply_text(f"✅ ডোনার *{donor_name}* সফলভাবে ভেরিফাইড হয়েছে!", parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text(
+        f"✅ ডোনার *{donor_name}* সফলভাবে ভেরিফাইড হয়েছে!",
+        parse_mode=ParseMode.MARKDOWN,
+    )
     try:
         await context.bot.send_message(
             donor_user_id,
-            f"🎉 *অভিনন্দন {donor_name}!*\n\nআপনার রক্তদাতা নিবন্ধন অনুমোদিত হয়েছে।\nজীবন বাঁচাতে সাহায্য করার জন্য ধন্যবাদ! 🩸",
-            parse_mode=ParseMode.MARKDOWN
+            f"🎉 *অভিনন্দন {donor_name}!*\n\nআপনার রক্তদাতা নিবন্ধন অনুমোদিত হয়েছে।\n"
+            f"জীবন বাঁচাতে সাহায্য করার জন্য ধন্যবাদ! 🩸",
+            parse_mode=ParseMode.MARKDOWN,
         )
     except Exception:
         pass
+
 
 async def remove_donor_command(update: Update, context):
     if not is_admin(update.effective_user.id):
@@ -370,7 +463,7 @@ async def remove_donor_command(update: Update, context):
     if not context.args:
         await update.message.reply_text(
             "❌ *ডোনার ডিলিট ব্যবহার:*\n/remove_donor <ডোনার আইডি>\n\nউদাহরণ: /remove_donor 1",
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.MARKDOWN,
         )
         return
     try:
@@ -378,54 +471,53 @@ async def remove_donor_command(update: Update, context):
     except (ValueError, IndexError):
         await update.message.reply_text("❌ ভুল ডোনার আইডি। সঠিক নম্বর দিন।")
         return
-    conn = sqlite3.connect('blood_donation.db')
+    conn = sqlite3.connect("blood_donation.db")
     c = conn.cursor()
-    c.execute('SELECT id, user_id, name FROM donors WHERE id = ?', (donor_id,))
+    c.execute("SELECT id, user_id, name FROM donors WHERE id = ?", (donor_id,))
     donor = c.fetchone()
     if not donor:
         await update.message.reply_text(f"❌ আইডি {donor_id} সম্পন্ন কোনো ডোনার পাওয়া যায়নি।")
         conn.close()
         return
     donor_id_db, donor_user_id, donor_name = donor
-    c.execute('DELETE FROM donors WHERE id = ?', (donor_id_db,))
+    c.execute("DELETE FROM donors WHERE id = ?", (donor_id_db,))
     conn.commit()
     conn.close()
-    await update.message.reply_text(f"🗑️ ডোনার *{donor_name}* সরানো হয়েছে!", parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text(
+        f"🗑️ ডোনার *{donor_name}* সরানো হয়েছে!", parse_mode=ParseMode.MARKDOWN
+    )
     try:
         await context.bot.send_message(
             donor_user_id,
             f"❌ *আপনার রক্তদাতা নিবন্ধন অ্যাডমিন দ্বারা সরানো হয়েছে।*\n\n"
             f"👨 মালিক: {OWNER_NAME}\n📞 যোগাযোগ: {OWNER_PHONE}",
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.MARKDOWN,
         )
     except Exception:
         pass
 
-# ============== UPDATE DONATION DATE CONVERSATION ==============
-# FIX: entry point handles BOTH /update_donation_date command AND button press.
-# The standalone CommandHandler("update_donation_date", ...) is NOT registered separately
-# so it cannot conflict with this ConversationHandler.
 
+# ============== UPDATE DONATION DATE CONVERSATION ==============
 async def update_donation_start(update: Update, context):
-    """Entry point: /update_donation_date command OR '📅 তারিখ আপডেট' button"""
     user_id = update.effective_user.id
     donor = get_donor(user_id)
     if not donor:
         await update.message.reply_text(
             "❌ আপনি একজন নিবন্ধিত রক্তদাতা নন।\n\nপ্রথমে /register দিয়ে নিবন্ধন করুন।",
-            reply_markup=main_keyboard()
+            reply_markup=main_keyboard(),
         )
         return ConversationHandler.END
     await update.message.reply_text(
-        "📅 আপনার শেষ রক্তদানের তারিখ লিখুন (YYYY-MM-DD ফরম্যাটে):\n\nউদাহরণ: 2026-04-21\n\nবাতিল করতে /cancel লিখুন।"
+        "📅 আপনার শেষ রক্তদানের তারিখ লিখুন (YYYY-MM-DD ফরম্যাটে):\n\n"
+        "উদাহরণ: 2026-04-21\n\nবাতিল করতে /cancel লিখুন।"
     )
     return UPDATE_DATE
 
+
 async def update_donation_receive(update: Update, context):
-    """Receive and save the donation date"""
     date_text = update.message.text.strip()
     try:
-        donation_date = datetime.strptime(date_text, '%Y-%m-%d')
+        donation_date = datetime.strptime(date_text, "%Y-%m-%d")
         if donation_date > datetime.now():
             await update.message.reply_text(
                 "❌ ভবিষ্যতের তারিখ দেওয়া যাবে না। সঠিক তারিখ দিন (YYYY-MM-DD):\nউদাহরণ: 2026-04-21"
@@ -438,84 +530,92 @@ async def update_donation_receive(update: Update, context):
         return UPDATE_DATE
 
     user_id = update.effective_user.id
-    conn = sqlite3.connect('blood_donation.db')
+    conn = sqlite3.connect("blood_donation.db")
     c = conn.cursor()
-    c.execute('UPDATE donors SET last_donation_date = ? WHERE user_id = ?', (date_text, user_id))
+    c.execute(
+        "UPDATE donors SET last_donation_date = ? WHERE user_id = ?", (date_text, user_id)
+    )
     conn.commit()
     conn.close()
 
-    next_date = (donation_date + timedelta(days=90)).strftime('%Y-%m-%d')
+    next_date = (donation_date + timedelta(days=90)).strftime("%Y-%m-%d")
     reply_markup = admin_keyboard() if is_admin(user_id) else main_keyboard()
     await update.message.reply_text(
         f"✅ আপনার রক্তদানের তারিখ আপডেট করা হয়েছে: {date_text}\n\n"
         f"📅 আপনার পরবর্তী উপযুক্ত তারিখ: {next_date}\n\n"
         f"রক্তদান করে মানুষ বাঁচাতে সাহায্য করুন! 🩸",
-        reply_markup=reply_markup
+        reply_markup=reply_markup,
     )
     return ConversationHandler.END
 
+
 async def update_donation_cancel(update: Update, context):
-    """Cancel update donation date"""
     reply_markup = admin_keyboard() if is_admin(update.effective_user.id) else main_keyboard()
     await update.message.reply_text("❌ তারিখ আপডেট বাতিল করা হয়েছে।", reply_markup=reply_markup)
     return ConversationHandler.END
+
 
 # ============== REGISTRATION CONVERSATION ==============
 async def register_start(update: Update, context):
     await update.message.reply_text(
         "📝 *রক্তদাতা নিবন্ধন*\n\nধাপ ১/৫: অনুগ্রহ করে আপনার পূর্ণ নাম লিখুন:",
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.MARKDOWN,
     )
     return NAME
 
+
 async def register_name(update: Update, context):
-    context.user_data['name'] = update.message.text
+    context.user_data["name"] = update.message.text
     await update.message.reply_text(
         "📞 *ধাপ ২/৫: ফোন নম্বর*\n\nআপনার ফোন নম্বর লিখুন (কান্ট্রি কোড সহ):\nউদাহরণ: +8801XXXXXXXXX",
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.MARKDOWN,
     )
     return PHONE
 
+
 async def register_phone(update: Update, context):
-    context.user_data['phone'] = update.message.text
+    context.user_data["phone"] = update.message.text
     await update.message.reply_text(
         "📍 *ধাপ ৩/৫: ঠিকানা*\n\nআপনার ঠিকানা লিখুন (শহর/এলাকা/গ্রাম):",
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.MARKDOWN,
     )
     return ADDRESS
 
+
 async def register_address(update: Update, context):
-    context.user_data['address'] = update.message.text
+    context.user_data["address"] = update.message.text
     await update.message.reply_text(
         "🩸 *ধাপ ৪/৫: ব্লাড গ্রুপ*\n\nআপনার ব্লাড গ্রুপ লিখুন:\nA+, A-, B+, B-, AB+, AB-, O+, O-",
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.MARKDOWN,
     )
     return BLOOD_GROUP
 
+
 async def register_blood(update: Update, context):
     blood = update.message.text.upper()
-    valid_groups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
+    valid_groups = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
     if blood not in valid_groups:
         await update.message.reply_text(
             "❌ ভুল ব্লাড গ্রুপ।\n\nসঠিক ব্লাড গ্রুপ লিখুন:\nA+, A-, B+, B-, AB+, AB-, O+, O-"
         )
         return BLOOD_GROUP
-    context.user_data['blood_group'] = blood
+    context.user_data["blood_group"] = blood
     await update.message.reply_text(
         "📅 *ধাপ ৫/৫: শেষ রক্তদানের তারিখ*\n\n"
         "শেষ কবে রক্ত দিয়েছেন? (তারিখ দিন: YYYY-MM-DD)\n\nউদাহরণ: 2024-01-15\n\n"
         "যদি কখনো রক্ত না দিয়ে থাকেন, তাহলে 'না' লিখুন।",
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.MARKDOWN,
     )
     return LAST_DONATION
 
+
 async def register_last_donation(update: Update, context):
     last_donation = update.message.text.strip()
-    if last_donation.lower() in ('না', 'na'):
+    if last_donation.lower() in ("না", "na"):
         last_donation = None
     else:
         try:
-            datetime.strptime(last_donation, '%Y-%m-%d')
+            datetime.strptime(last_donation, "%Y-%m-%d")
         except ValueError:
             await update.message.reply_text(
                 "❌ ভুল তারিখ ফরম্যাট।\n\nসঠিক ফরম্যাট: YYYY-MM-DD\nউদাহরণ: 2024-01-15\n\n"
@@ -524,13 +624,15 @@ async def register_last_donation(update: Update, context):
             return LAST_DONATION
 
     user_id = update.effective_user.id
-    name = context.user_data.get('name')
-    phone = context.user_data.get('phone')
-    address = context.user_data.get('address')
-    blood = context.user_data.get('blood_group')
+    name = context.user_data.get("name")
+    phone = context.user_data.get("phone")
+    address = context.user_data.get("address")
+    blood = context.user_data.get("blood_group")
 
     if not all([name, phone, address, blood]):
-        await update.message.reply_text("❌ নিবন্ধন তথ্য অনুপস্থিত। দয়া করে /register দিয়ে আবার শুরু করুন।")
+        await update.message.reply_text(
+            "❌ নিবন্ধন তথ্য অনুপস্থিত। দয়া করে /register দিয়ে আবার শুরু করুন।"
+        )
         context.user_data.clear()
         return ConversationHandler.END
 
@@ -552,7 +654,7 @@ async def register_last_donation(update: Update, context):
         f"📅 শেষ রক্তদানের তারিখ: {last_donation_text}\n\n"
         f"আপনার নিবন্ধন অ্যাডমিন অনুমোদনের অপেক্ষায় রয়েছে।\nজীবন বাঁচাতে সাহায্য করার জন্য ধন্যবাদ! 🩸",
         reply_markup=reply_markup,
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.MARKDOWN,
     )
 
     await context.bot.send_message(
@@ -560,28 +662,28 @@ async def register_last_donation(update: Update, context):
         f"📝 *নতুন রক্তদাতা নিবন্ধন*\n\n"
         f"নাম: {name}\nব্লাড: {blood}\nফোন: {phone}\nঠিকানা: {address}\n"
         f"শেষ দান: {last_donation_text}\nইউজার আইডি: {user_id}",
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.MARKDOWN,
     )
-    keyboard = [[InlineKeyboardButton("📋 পেন্ডিং ডোনার দেখুন", callback_data='pending')]]
+    keyboard = [[InlineKeyboardButton("📋 পেন্ডিং ডোনার দেখুন", callback_data="pending")]]
     await context.bot.send_message(
         ADMIN_ID,
         "নিচের বাটন ব্যবহার করে পেন্ডিং ডোনার অনুমোদন করুন:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
     context.user_data.clear()
     return ConversationHandler.END
+
 
 async def register_cancel(update: Update, context):
     await update.message.reply_text(
         "❌ নিবন্ধন বাতিল করা হয়েছে।",
-        reply_markup=admin_keyboard() if is_admin(update.effective_user.id) else main_keyboard()
+        reply_markup=admin_keyboard() if is_admin(update.effective_user.id) else main_keyboard(),
     )
     context.user_data.clear()
     return ConversationHandler.END
 
+
 # ============== MENU BUTTON HANDLER ==============
-# FIX: '📅 তারিখ আপডেট' is now an entry_point of update_conv_handler,
-# so it is NOT handled here to avoid conflicts.
 async def menu_button_handler(update: Update, context):
     text = update.message.text
     user_id = update.effective_user.id
@@ -609,95 +711,107 @@ async def menu_button_handler(update: Update, context):
     else:
         await handle_text(update, context)
 
+
 # ============== TEXT HANDLER ==============
 async def handle_text(update: Update, context):
     text = update.message.text
-    action = context.user_data.get('action')
-    if action not in ['search', 'emergency']:
+    action = context.user_data.get("action")
+    if action not in ["search", "emergency"]:
         return
 
     blood = text.upper()
-    valid_groups = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
+    valid_groups = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
     if blood not in valid_groups:
         await update.message.reply_text(
             "❌ ভুল ব্লাড গ্রুপ।\n\nসঠিক ব্লাড গ্রুপ: A+, A-, B+, B-, AB+, AB-, O+, O-",
-            reply_markup=admin_keyboard() if is_admin(update.effective_user.id) else main_keyboard()
+            reply_markup=admin_keyboard() if is_admin(update.effective_user.id) else main_keyboard(),
         )
-        context.user_data['action'] = None
+        context.user_data["action"] = None
         return
 
-    if action == 'search':
+    if action == "search":
         donors = search_donors(blood)
         if not donors:
             await update.message.reply_text(
                 f"❌ এই রক্তের কোনো দাতা পাওয়া যায়নি\n\nব্লাড গ্রুপ: {blood}\n\n"
                 f"পরামর্শ:\n• অন্য ব্লাড গ্রুপ ট্রাই করুন\n• পরে আবার চেষ্টা করুন\n• জরুরি রিকোয়েস্ট ব্যবহার করুন",
-                reply_markup=admin_keyboard() if is_admin(update.effective_user.id) else main_keyboard()
+                reply_markup=admin_keyboard() if is_admin(update.effective_user.id) else main_keyboard(),
             )
         else:
             result = f"🩸 {blood} ব্লাড গ্রুপের রক্তদাতা:\n\n"
             for name, phone, address, last_donation in donors:
                 eligible = is_eligible_to_donate(last_donation)
-                status_text = "✅ রক্ত দেওয়ার জন্য উপযুক্ত" if eligible else "❌ সম্প্রতি রক্ত দিয়েছেন (৯০ দিনের মধ্যে)"
+                status_text = (
+                    "✅ রক্ত দেওয়ার জন্য উপযুক্ত"
+                    if eligible
+                    else "❌ সম্প্রতি রক্ত দিয়েছেন (৯০ দিনের মধ্যে)"
+                )
                 last_donation_text = last_donation if last_donation else "কখনো না"
-                result += f"👤 *নাম:* {name}\n📞 *ফোন:* {phone}\n📍 *ঠিকানা:* {address}\n"
-                result += f"📅 শেষ দান: {last_donation_text}\n⭐ {status_text}\n" + "─" * 20 + "\n"
+                result += (
+                    f"👤 *নাম:* {name}\n📞 *ফোন:* {phone}\n📍 *ঠিকানা:* {address}\n"
+                    f"📅 শেষ দান: {last_donation_text}\n⭐ {status_text}\n"
+                    + "─" * 20
+                    + "\n"
+                )
             await update.message.reply_text(result, parse_mode=ParseMode.MARKDOWN)
-        context.user_data['action'] = None
+        context.user_data["action"] = None
 
-    elif action == 'emergency':
+    elif action == "emergency":
         donors = search_donors(blood)
         if not donors:
             await update.message.reply_text(
                 f"🚨 {blood} ব্লাড গ্রুপের কোনো সক্রিয় রক্তদাতা পাওয়া যায়নি।\n\n"
                 f"অ্যাডমিনকে জানানো হয়েছে। আমরা শীঘ্রই যোগাযোগ করব।",
-                reply_markup=admin_keyboard() if is_admin(update.effective_user.id) else main_keyboard()
+                reply_markup=admin_keyboard() if is_admin(update.effective_user.id) else main_keyboard(),
             )
             await context.bot.send_message(
                 ADMIN_ID,
                 f"🚨 *জরুরি রিকোয়েস্ট ব্যর্থ*\n\nব্লাড গ্রুপ: {blood}\n"
                 f"আবেদনকারী: {update.effective_user.full_name}\nইউজার আইডি: {update.effective_user.id}",
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=ParseMode.MARKDOWN,
             )
         else:
             notified = 0
             for name, phone, address, last_donation in donors:
-                conn = sqlite3.connect('blood_donation.db')
+                conn = sqlite3.connect("blood_donation.db")
                 c = conn.cursor()
-                c.execute('SELECT user_id FROM donors WHERE name = ? AND phone = ?', (name, phone))
-                result = c.fetchone()
+                c.execute(
+                    "SELECT user_id FROM donors WHERE name = ? AND phone = ?", (name, phone)
+                )
+                res = c.fetchone()
                 conn.close()
-                if result:
+                if res:
                     try:
                         await context.bot.send_message(
-                            result[0],
+                            res[0],
                             f"🚨 *জরুরি রক্তের প্রয়োজন!*\n\nব্লাড গ্রুপ: {blood}\n"
                             f"আবেদনকারী: {update.effective_user.full_name}\n\n"
                             f"যদি আপনি সাহায্য করতে পারেন তাহলে এখনই যোগাযোগ করুন!",
-                            parse_mode=ParseMode.MARKDOWN
+                            parse_mode=ParseMode.MARKDOWN,
                         )
                         notified += 1
-                    except:
+                    except Exception:
                         pass
             await update.message.reply_text(
                 f"🚨 *জরুরি রিকোয়েস্ট পাঠানো হয়েছে!*\n\nব্লাড গ্রুপ: {blood}\n"
                 f"নোটিফাই করা হয়েছে: {notified} জন দাতাকে\n\nদাতারা শীঘ্রই আপনার সাথে যোগাযোগ করবেন।",
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=ParseMode.MARKDOWN,
             )
             await context.bot.send_message(
                 ADMIN_ID,
                 f"🚨 *জরুরি রিকোয়েস্ট পাঠানো হয়েছে*\n\nব্লাড গ্রুপ: {blood}\n"
                 f"আবেদনকারী: {update.effective_user.full_name}\nনোটিফাই: {notified} জন দাতা",
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=ParseMode.MARKDOWN,
             )
-        context.user_data['action'] = None
+        context.user_data["action"] = None
+
 
 # ============== CALLBACK BUTTON HANDLER ==============
 async def callback_button_handler(update: Update, context):
     query = update.callback_query
     await query.answer()
 
-    if query.data == 'pending':
+    if query.data == "pending":
         if update.effective_user.id == ADMIN_ID:
             pending = get_pending_donors()
             if not pending:
@@ -705,71 +819,92 @@ async def callback_button_handler(update: Update, context):
                 return
             for donor in pending:
                 donor_id, user_id, name, blood, phone, address, last_donation = donor
-                keyboard = [[InlineKeyboardButton("✅ অনুমোদন", callback_data=f'approve_{donor_id}')]]
+                keyboard = [
+                    [InlineKeyboardButton("✅ অনুমোদন", callback_data=f"approve_{donor_id}")]
+                ]
                 last_donation_text = last_donation if last_donation else "কখনো না"
                 await query.message.reply_text(
                     f"*পেন্ডিং ডোনার*\n\nনাম: {name}\nব্লাড: {blood}\nফোন: {phone}\n"
                     f"ঠিকানা: {address}\nশেষ দান: {last_donation_text}",
                     reply_markup=InlineKeyboardMarkup(keyboard),
-                    parse_mode=ParseMode.MARKDOWN
+                    parse_mode=ParseMode.MARKDOWN,
                 )
             await query.delete_message()
         else:
             await query.edit_message_text("⛔ অ্যাক্সেস অস্বীকৃত।")
 
-    elif query.data.startswith('approve_'):
+    elif query.data.startswith("approve_"):
         if update.effective_user.id == ADMIN_ID:
-            donor_id = int(query.data.split('_')[1])
+            donor_id = int(query.data.split("_")[1])
             approve_donor(donor_id)
             await query.edit_message_text("✅ ডোনার সফলভাবে অনুমোদিত হয়েছে!")
-            conn = sqlite3.connect('blood_donation.db')
+            conn = sqlite3.connect("blood_donation.db")
             c = conn.cursor()
-            c.execute('SELECT user_id, name FROM donors WHERE id = ?', (donor_id,))
+            c.execute("SELECT user_id, name FROM donors WHERE id = ?", (donor_id,))
             result = c.fetchone()
             conn.close()
             if result:
-                user_id, name = result
+                uid, name = result
                 try:
                     await context.bot.send_message(
-                        user_id,
+                        uid,
                         f"🎉 *অভিনন্দন {name}!*\n\nআপনার রক্তদাতা নিবন্ধন অনুমোদিত হয়েছে।\n"
                         f"জীবন বাঁচাতে সাহায্য করার জন্য ধন্যবাদ! 🩸",
-                        parse_mode=ParseMode.MARKDOWN
+                        parse_mode=ParseMode.MARKDOWN,
                     )
-                except:
+                except Exception:
                     pass
         else:
             await query.edit_message_text("⛔ অ্যাক্সেস অস্বীকৃত।")
 
-    elif query.data == 'stats':
+    elif query.data == "stats":
         if update.effective_user.id == ADMIN_ID:
             donors = get_all_donors()
             total = len(donors)
-            approved = len([d for d in donors if d[7] == 'approved'])
+            approved = len([d for d in donors if d[7] == "approved"])
             pending = total - approved
             blood_stats = {}
             for d in donors:
-                if d[7] == 'approved':
+                if d[7] == "approved":
                     bg = d[3]
                     blood_stats[bg] = blood_stats.get(bg, 0) + 1
-            stats_text = f"*পরিসংখ্যান*\n\nমোট ডোনার: {total}\nঅনুমোদিত: {approved}\nপেন্ডিং: {pending}\n\n*ব্লাড গ্রুপ ভিত্তিক বিতরণ:*\n"
+            stats_text = (
+                f"*পরিসংখ্যান*\n\nমোট ডোনার: {total}\nঅনুমোদিত: {approved}\nপেন্ডিং: {pending}\n\n"
+                f"*ব্লাড গ্রুপ ভিত্তিক বিতরণ:*\n"
+            )
             for bg, count in sorted(blood_stats.items()):
                 stats_text += f"{bg}: {count} জন\n"
             await query.edit_message_text(stats_text, parse_mode=ParseMode.MARKDOWN)
         else:
             await query.edit_message_text("⛔ অ্যাক্সেস অস্বীকৃত।")
 
-    elif query.data == 'back':
+    elif query.data == "back":
         await query.edit_message_text(
             "🩸 *ব্লাড ডোনেশন বট*\n\nমূল মেনু:",
             reply_markup=admin_keyboard() if is_admin(update.effective_user.id) else main_keyboard(),
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.MARKDOWN,
         )
 
-# ============== MAIN FUNCTION ==============
+
+# ============== FLASK THREAD ==============
+def run_flask():
+    flask_app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
+
+
+# ============== MAIN ==============
 def main():
     init_db()
-    application = Application.builder().token(BOT_TOKEN).build()
+
+    # Start Flask in a daemon thread so Render sees an open port
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    print(f"✅ Flask server started on port {PORT}")
+
+    application = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .build()
+    )
 
     # --- Registration ConversationHandler ---
     reg_conv_handler = ConversationHandler(
@@ -778,10 +913,10 @@ def main():
             MessageHandler(filters.Regex("^📝 রেজিস্ট্রেশন$"), register_start),
         ],
         states={
-            NAME:          [MessageHandler(filters.TEXT & ~filters.COMMAND, register_name)],
-            PHONE:         [MessageHandler(filters.TEXT & ~filters.COMMAND, register_phone)],
-            ADDRESS:       [MessageHandler(filters.TEXT & ~filters.COMMAND, register_address)],
-            BLOOD_GROUP:   [MessageHandler(filters.TEXT & ~filters.COMMAND, register_blood)],
+            NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, register_name)],
+            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, register_phone)],
+            ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, register_address)],
+            BLOOD_GROUP: [MessageHandler(filters.TEXT & ~filters.COMMAND, register_blood)],
             LAST_DONATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, register_last_donation)],
         },
         fallbacks=[
@@ -791,10 +926,7 @@ def main():
         allow_reentry=True,
     )
 
-    # --- FIX: Update Donation Date ConversationHandler ---
-    # Entry points include BOTH the command AND the keyboard button.
-    # No standalone CommandHandler("update_donation_date", ...) is registered
-    # outside this handler — that was the root cause of the original bug.
+    # --- Update Donation Date ConversationHandler ---
     update_conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("update_donation_date", update_donation_start),
@@ -809,11 +941,11 @@ def main():
         allow_reentry=True,
     )
 
-    # Register ConversationHandlers FIRST so they take priority
+    # ConversationHandlers FIRST (priority)
     application.add_handler(reg_conv_handler)
     application.add_handler(update_conv_handler)
 
-    # Standard command handlers (update_donation_date intentionally omitted here)
+    # Standard command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("search", search_command))
@@ -826,27 +958,32 @@ def main():
     application.add_handler(CommandHandler("verify_donor", verify_donor_command))
     application.add_handler(CommandHandler("remove_donor", remove_donor_command))
 
-    # Menu button handler — excludes '📝 রেজিস্ট্রেশন' and '📅 তারিখ আপডেট'
-    # because those are entry_points of their respective ConversationHandlers
-    application.add_handler(MessageHandler(
-        filters.Regex(
-            "^(🩸 ডোনার খুঁজুন|🚨 জরুরি রিকোয়েস্ট|ℹ️ আমার তথ্য|❓ সাহায্য"
-            "|🔙 মেনুতে ফিরুন|📢 ব্রডকাস্ট|👥 ইউজার লিস্ট"
-            "|🩸 ইমার্জেন্সি লিস্ট|✅ ডোনার ভেরিফাই|❌ ডোনার ডিলিট)$"
-        ),
-        menu_button_handler
-    ))
+    # Menu button handler
+    application.add_handler(
+        MessageHandler(
+            filters.Regex(
+                "^(🩸 ডোনার খুঁজুন|🚨 জরুরি রিকোয়েস্ট|ℹ️ আমার তথ্য|❓ সাহায্য"
+                "|🔙 মেনুতে ফিরুন|📢 ব্রডকাস্ট|👥 ইউজার লিস্ট"
+                "|🩸 ইমার্জেন্সি লিস্ট|✅ ডোনার ভেরিফাই|❌ ডোনার ডিলিট)$"
+            ),
+            menu_button_handler,
+        )
+    )
 
     application.add_handler(CallbackQueryHandler(callback_button_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     print("=" * 50)
     print("🩸 Blood Donation Bot is running...")
-    print(f"Bot Token: {BOT_TOKEN[:15]}...")
     print(f"Admin ID: {ADMIN_ID}")
     print("=" * 50)
 
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # drop_pending_updates=True prevents conflict from stale getUpdates sessions
+    application.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True,
+    )
+
 
 if __name__ == "__main__":
     main()
