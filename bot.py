@@ -875,7 +875,6 @@ async def callback_button_handler(update: Update, context):
 # ============== MAIN ==============
 def main():
     print("BOT IS STARTING...")
-     print("INITIALIZING DB...")
     init_db()
 
     # Start Flask in a daemon thread so Render sees an open port
