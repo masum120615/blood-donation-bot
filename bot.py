@@ -35,11 +35,17 @@ UPDATE_DATE = 5
 def get_db_connection():
     """Create and return a PostgreSQL database connection using DATABASE_URL."""
     if not DATABASE_URL:
-        raise EnvironmentError(
-            "DATABASE_URL environment variable is not set. "
-            "Please configure it in your Railway environment settings."
-        )
-    conn = psycopg2.connect(DATABASE_URL, sslmode="require")
+        print("=" * 60)
+        print("FATAL ERROR: DATABASE_URL is not set!")
+        print("Fix: Go to Railway → your project → PostgreSQL plugin")
+        print("Then link it to your bot service under Variables.")
+        print("=" * 60)
+        raise EnvironmentError("DATABASE_URL environment variable is not set.")
+    # Railway may prefix the URL with 'postgres://' but psycopg2 needs 'postgresql://'
+    url = DATABASE_URL
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    conn = psycopg2.connect(url)
     return conn
 
 # ============== DATABASE SETUP ==============
@@ -828,6 +834,22 @@ async def callback_button_handler(update: Update, context):
 
 # ============== MAIN FUNCTION ==============
 def main():
+    # Startup environment check
+    print("=" * 50)
+    print("Blood Donation Bot starting...")
+    if not DATABASE_URL:
+        print("FATAL: DATABASE_URL is not set.")
+        print("  Go to Railway -> your project -> Add PostgreSQL plugin")
+        print("  Then check the Variables tab in your bot service.")
+        raise SystemExit(1)
+    if not BOT_TOKEN:
+        print("FATAL: BOT_TOKEN is not set.")
+        raise SystemExit(1)
+    print(f"BOT_TOKEN found: {BOT_TOKEN[:15]}...")
+    print("DATABASE_URL found")
+    print(f"Admin ID: {ADMIN_ID}")
+    print("=" * 50)
+
     init_db()
     application = Application.builder().token(BOT_TOKEN).build()
 
